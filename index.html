@@ -161,6 +161,10 @@ td{padding:8px 0;border-top:1px solid var(--line);text-align:right;font-variant-
 td.num{font-size:15.5px}
 td .c{color:var(--cold)}td .w{color:var(--warm)}td .rr{color:var(--rain)}
 tfoot td{font-weight:600;border-top:2px solid var(--line)}
+.windy{position:relative;margin:0 -14px -14px;border-radius:0 0 15px 15px;overflow:hidden;background:var(--sunk);height:min(520px,72vh)}
+.windy iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
+.windy .ph{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13.5px;text-align:center;padding:16px}
+.wlink{font-size:12.5px;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:500}
 .foot{margin-top:24px;font-size:12.5px;color:var(--muted);display:grid;gap:4px}
 .foot a{color:inherit}
 
@@ -307,6 +311,22 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
       </div>
     </div>
     <svg id="chart" class="chart" role="img" aria-label="Courbe"></svg>
+  </section>
+
+  <h2>Carte Windy <a class="wlink" id="wyLink" href="https://www.windy.com/" target="_blank" rel="noopener">ouvrir dans Windy ↗</a></h2>
+  <section class="card">
+    <div class="chips" id="wyChips" role="group" aria-label="Couche Windy">
+      <button class="chip" data-o="wind">Vent</button>
+      <button class="chip" data-o="gust">Rafales</button>
+      <button class="chip" data-o="rain">Pluie</button>
+      <button class="chip" data-o="radar">Radar</button>
+      <button class="chip" data-o="clouds">Nuages</button>
+      <button class="chip" data-o="cbase">Plafond</button>
+      <button class="chip" data-o="visibility">Visibilité</button>
+      <button class="chip" data-o="temp">Température</button>
+      <button class="chip" data-o="pressure">Pression</button>
+    </div>
+    <div class="windy" id="windy"><div class="ph">La carte Windy se charge quand tu arrives ici.</div></div>
   </section>
 
   <h2>Prochaines heures <span>prévision Open-Meteo</span></h2>
@@ -968,6 +988,21 @@ $('hTbl').addEventListener('click',e=>{const tr=e.target.closest('tr[data-k],tr[
   if(tr.dataset.k){HV.mode='day';HV.day=ymdK(+tr.dataset.k)}else{HV.mode='month';HV.month=tr.dataset.m}renderHist();$('vHist').scrollIntoView({behavior:'smooth'})});
 
 /* ---------- onglets ---------- */
+/* ---------- carte Windy : iframe officielle, chargée une fois, jamais touchée par le rafraîchissement ---------- */
+const WY={o:LS.get('meteo-windy','wind'),loaded:false};
+function wyPos(){const c=(S&&S.cur)||{};return{lat:c.lat||50.553,lon:c.lon||4.913}}
+function wyUrl(){const {lat,lon}=wyPos(),U={kmh:'km/h',kt:'kt',ms:'m/s'}[cfg.wind]||'km/h';
+  const q={lat,lon,detailLat:lat,detailLon:lon,zoom:WY.o==='radar'?8:7,level:'surface',overlay:WY.o,product:'ecmwf',menu:'',message:'true',marker:'true',calendar:'now',pressure:'true',
+    type:'map',location:'coordinates',detail:'true',metricWind:U,metricTemp:'°C',metricRain:'mm',radarRange:'-1'};
+  return 'https://embed.windy.com/embed2.html?'+Object.entries(q).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&')}
+function wyLoad(){const {lat,lon}=wyPos();WY.loaded=true;
+  $('windy').innerHTML=`<iframe title="Carte Windy" src="${wyUrl()}" allow="fullscreen"></iframe>`;
+  $('wyLink').href=`https://www.windy.com/${lat.toFixed(3)}/${lon.toFixed(3)}?${WY.o},${lat.toFixed(3)},${lon.toFixed(3)},9`}
+function wyChips(){document.querySelectorAll('#wyChips .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.o===WY.o))}
+document.querySelectorAll('#wyChips .chip').forEach(b=>b.addEventListener('click',()=>{if(WY.o===b.dataset.o)return;WY.o=b.dataset.o;LS.set('meteo-windy',WY.o);wyChips();wyLoad()}));
+wyChips();
+if('IntersectionObserver' in window){const io=new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting)&&!WY.loaded){wyLoad();io.disconnect()}},{rootMargin:'300px'});io.observe($('windy'))}else wyLoad();
+
 let tab=LS.get('meteo-tab','now')==='hist'?'hist':'now';
 function setTab(t){tab=t;LS.set('meteo-tab',t);$('vNow').hidden=t!=='now';$('vHist').hidden=t!=='hist';
   document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.t===t));scrollTo(0,0);

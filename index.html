@@ -202,6 +202,15 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .btn{border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:11px 16px;font-weight:600;cursor:pointer}
 .btn.pri{background:var(--ink);color:var(--bg);border-color:var(--ink);flex:1}
+.notif{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0;display:grid;gap:10px;min-width:0}
+.notif legend{font-weight:600;font-size:13px;padding:0 6px}
+.nf-st{margin:0;font-size:13.5px;color:var(--muted)}
+.nf-st b{color:var(--ink)}
+.nf-st.bad{color:var(--warn)}
+.ck{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:500;cursor:pointer}
+.ck input{width:18px;height:18px;flex:none;accent-color:var(--data);transform:translateY(3px)}
+.ck small{color:var(--muted);font-weight:400}
+#nfOpts{display:grid;gap:8px}
 #toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:10px;padding:9px 14px;font-size:13.5px;z-index:30}
 
 @media (min-width:640px){
@@ -388,6 +397,20 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
     <div class="field"><label for="fId">Identifiant de la station</label><input id="fId" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
     <div class="field"><label for="fKey">Clé API Weather Underground</label><input id="fKey" autocomplete="off" spellcheck="false"><small>wunderground.com › Mon profil › API Keys</small></div>
     <div class="field"><label for="fWind">Unité du vent</label><select id="fWind"><option value="kmh">km/h</option><option value="kt">nœuds (kt)</option><option value="ms">m/s</option></select></div>
+    <fieldset class="notif" id="nfBox">
+      <legend>Alertes pluie</legend>
+      <p class="nf-st" id="nfSt"></p>
+      <div id="nfRelay">
+        <div class="field"><label for="nfUrl">Adresse du relais</label><input id="nfUrl" placeholder="https://potager.xxx.workers.dev" autocomplete="off" spellcheck="false" inputmode="url"></div>
+        <div class="field"><label for="nfTok">Code d'accès</label><input id="nfTok" autocomplete="off" spellcheck="false"><small>Les deux sont dans l'app Potager : Menu → Synchronisation.</small></div>
+      </div>
+      <div id="nfOpts" hidden>
+        <label class="ck"><input type="checkbox" id="nfSoon"> Pluie prévue par le radar <small>dans l'heure qui vient</small></label>
+        <label class="ck"><input type="checkbox" id="nfNow"> Pluie mesurée par le pluviomètre</label>
+        <label class="ck"><input type="checkbox" id="nfNight"> Aussi la nuit <small>de 22 h à 7 h</small></label>
+      </div>
+      <div class="row"><button type="button" class="btn" id="nfGo">Activer</button><button type="button" class="btn" id="nfTest" hidden>Envoyer un essai</button></div>
+    </fieldset>
     <div class="row"><button type="button" class="btn" id="setCancel">Annuler</button><button type="button" class="btn" id="setReset">Par défaut</button><button type="submit" class="btn pri">Enregistrer</button></div>
   </form>
 </div>
@@ -1015,10 +1038,48 @@ document.querySelectorAll('#rangeSeg button').forEach(b=>b.addEventListener('cli
 document.querySelectorAll('#sumSeg button').forEach(b=>b.addEventListener('click',()=>{ui.sumP=+b.dataset.p;ui.logAll=false;LS.set('meteo-sum',ui.sumP);renderSummary()}));
 $('logMore').addEventListener('click',()=>{ui.logAll=!ui.logAll;renderSummary()});
 $('btnRefresh').addEventListener('click',()=>load());
+/* ---------- alertes pluie : notifications envoyées par le relais Cloudflare du potager ---------- */
+const NTF=Object.assign({url:'',token:'',endpoint:'',prefs:{soon:true,now:true,night:false}},LS.get('meteo-notif',{}));
+function nfRelay(){if(NTF.url&&NTF.token)return{url:NTF.url,token:NTF.token};const g=LS.get('potager-gardena',null);return g&&g.url&&g.token?{url:g.url.replace(/\/+$/,''),token:g.token,shared:true}:null}
+async function nfApi(path,body){const r0=nfRelay();if(!r0)throw new Error('Indique l\'adresse et le code du relais.');let r;
+  try{r=await fetch(r0.url+path,{method:body?'POST':'GET',headers:{'X-Potager-Key':r0.token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})}catch(e){throw new Error('Relais injoignable : vérifie son adresse.')}
+  const j=await r.json().catch(()=>({}));if(r.status===401)throw new Error('Le relais refuse ce code d\'accès.');if(!r.ok)throw new Error(j.error||('Le relais a répondu '+r.status+'.'));return j}
+const nfOK=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+const nfStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+async function nfSub(){try{const reg=await navigator.serviceWorker.getRegistration();return reg?await reg.pushManager.getSubscription():null}catch(e){return null}}
+async function nfRender(msg,bad){
+  const st=$('nfSt'),r0=nfRelay(),sub=nfOK()?await nfSub():null,on=!!(sub&&NTF.endpoint===sub.endpoint);
+  $('nfRelay').hidden=!!(r0&&(r0.shared||on));if(!$('nfRelay').hidden){$('nfUrl').value=NTF.url||'';$('nfTok').value=NTF.token||''}
+  $('nfOpts').hidden=!on;$('nfTest').hidden=!on;$('nfGo').textContent=on?'Désactiver':'Activer';$('nfGo').disabled=!nfOK();
+  $('nfSoon').checked=NTF.prefs.soon!==false;$('nfNow').checked=NTF.prefs.now!==false;$('nfNight').checked=!!NTF.prefs.night;
+  st.classList.toggle('bad',!!bad);
+  if(msg){st.textContent=msg;return}
+  if(!nfOK())st.innerHTML=/iPhone|iPad/.test(navigator.userAgent)&&!nfStandalone()?'Sur iPhone, les notifications ne marchent que dans l\'app installée : Safari → Partager → « Sur l\'écran d\'accueil », puis ouvre-la depuis son icône.':'Ce navigateur ne gère pas les notifications.';
+  else if(on)st.innerHTML='<b>Activées sur cet appareil.</b> Le relais vérifie le radar et le pluviomètre toutes les 5 minutes.';
+  else if(Notification.permission==='denied')st.textContent='Notifications refusées pour cette app : autorise-les dans les réglages de l\'appareil, puis réessaie.';
+  else st.textContent=r0&&r0.shared?'Relais du potager trouvé. Une alerte quand le radar annonce de la pluie dans l\'heure, une autre quand le pluviomètre en mesure.':'Une alerte quand le radar annonce de la pluie dans l\'heure, une autre quand le pluviomètre en mesure.'}
+const b64k=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0))};
+const nfPrefs=()=>({app:'meteo',soon:NTF.prefs.soon!==false,now:NTF.prefs.now!==false,night:!!NTF.prefs.night});
+$('nfGo').addEventListener('click',async()=>{
+  const btn=$('nfGo');const sub0=await nfSub();
+  if(sub0&&NTF.endpoint===sub0.endpoint){btn.disabled=true;try{await nfApi('/push/unsubscribe',{endpoint:sub0.endpoint})}catch(e){}try{await sub0.unsubscribe()}catch(e){}NTF.endpoint='';LS.set('meteo-notif',NTF);btn.disabled=false;return nfRender('Alertes désactivées sur cet appareil.')}
+  if(!$('nfRelay').hidden){NTF.url=$('nfUrl').value.trim().replace(/\/+$/,'');NTF.token=$('nfTok').value.trim();if(!/^https:\/\//.test(NTF.url))return nfRender('L\'adresse du relais doit commencer par https://',true);if(!NTF.token)return nfRender('Il manque le code d\'accès.',true)}
+  const perm=await Notification.requestPermission();if(perm!=='granted')return nfRender('Notifications refusées : autorise-les dans les réglages de l\'appareil.',true);
+  btn.disabled=true;nfRender('Activation…');
+  try{const {key}=await nfApi('/push/key');const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();if(sub){try{await sub.unsubscribe()}catch(e){}}
+    sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64k(key)});
+    await nfApi('/push/subscribe',{sub:sub.toJSON(),prefs:nfPrefs(),name:(/iPhone/.test(navigator.userAgent)?'iPhone':/iPad/.test(navigator.userAgent)?'iPad':'Ordinateur')+' · Météo'});
+    NTF.endpoint=sub.endpoint;LS.set('meteo-notif',NTF);btn.disabled=false;nfRender()}
+  catch(e){btn.disabled=false;nfRender(e.message,true)}});
+['nfSoon','nfNow','nfNight'].forEach(id=>$(id).addEventListener('change',async()=>{NTF.prefs={soon:$('nfSoon').checked,now:$('nfNow').checked,night:$('nfNight').checked};LS.set('meteo-notif',NTF);
+  try{await nfApi('/push/prefs',{endpoint:NTF.endpoint,prefs:nfPrefs()});toast('Alertes mises à jour')}catch(e){nfRender(e.message,true)}}));
+$('nfTest').addEventListener('click',async()=>{try{await nfApi('/push/test',{endpoint:NTF.endpoint,kind:NTF.prefs.soon===false?'now':'soon'});toast('Essai envoyé')}catch(e){nfRender(e.message,true)}});
+
 function toast(t){const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toast.k);toast.k=setTimeout(()=>e.hidden=true,1800)}
 $('metar').addEventListener('click',async()=>{const t=$('metar').textContent;try{await navigator.clipboard.writeText(t);toast('METAR copié')}catch(e){const r=document.createRange();r.selectNodeContents($('metar'));const s=getSelection();s.removeAllRanges();s.addRange(r)}});
 const sheet=$('sheet');
-$('btnSet').addEventListener('click',()=>{$('fId').value=cfg.id;$('fKey').value=cfg.key;$('fWind').value=cfg.wind;sheet.hidden=false});
+$('btnSet').addEventListener('click',()=>{$('fId').value=cfg.id;$('fKey').value=cfg.key;$('fWind').value=cfg.wind;sheet.hidden=false;nfRender()});
 $('setCancel').addEventListener('click',()=>sheet.hidden=true);
 sheet.addEventListener('click',e=>{if(e.target===sheet)sheet.hidden=true});
 $('setReset').addEventListener('click',()=>{$('fId').value=DEF.id;$('fKey').value=DEF.key;$('fWind').value=DEF.wind});

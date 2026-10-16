@@ -6,6 +6,13 @@ prévisions, METAR, courbes sur 30 jours et historique (jour, mois, année, pér
 **Utiliser l'app** : https://razor-back1.github.io/Meteo/ — sur iPhone, ouvrir dans Safari →
 Partager → « Sur l'écran d'accueil ».
 
+## Alertes pluie
+
+Réglages (roue dentée) → Alertes pluie. Les notifications sont envoyées par le relais Cloudflare du
+potager (`gardena-worker.js` du dépôt Potager), qui lit toutes les 5 minutes le radar Buienradar et
+le pluviomètre de la station. Il faut le cron `*/5 * * * *` sur le Worker. Sur iPhone, l'app doit
+être installée sur l'écran d'accueil.
+
 ## Archive
 
 Chaque nuit, la tâche GitHub Actions `Archive météo` (`.github/workflows/meteo-archive.yml`) lit la

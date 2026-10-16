@@ -319,7 +319,6 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
       <button class="chip" data-o="wind">Vent</button>
       <button class="chip" data-o="gust">Rafales</button>
       <button class="chip" data-o="rain">Pluie</button>
-      <button class="chip" data-o="radar">Radar</button>
       <button class="chip" data-o="clouds">Nuages</button>
       <button class="chip" data-o="cbase">Plafond</button>
       <button class="chip" data-o="visibility">Visibilité</button>
@@ -990,9 +989,10 @@ $('hTbl').addEventListener('click',e=>{const tr=e.target.closest('tr[data-k],tr[
 /* ---------- onglets ---------- */
 /* ---------- carte Windy : iframe officielle, chargée une fois, jamais touchée par le rafraîchissement ---------- */
 const WY={o:LS.get('meteo-windy','wind'),loaded:false};
+if(WY.o==='radar')WY.o='rain'; // la couche Radar de Windy exige la localisation de l'appareil
 function wyPos(){const c=(S&&S.cur)||{};return{lat:c.lat||50.553,lon:c.lon||4.913}}
 function wyUrl(){const {lat,lon}=wyPos(),U={kmh:'km/h',kt:'kt',ms:'m/s'}[cfg.wind]||'km/h';
-  const q={lat,lon,detailLat:lat,detailLon:lon,zoom:WY.o==='radar'?8:7,level:'surface',overlay:WY.o,product:'ecmwf',menu:'',message:'true',marker:'true',calendar:'now',pressure:'true',
+  const q={lat,lon,detailLat:lat,detailLon:lon,zoom:8,level:'surface',overlay:WY.o,product:'ecmwf',menu:'',message:'',marker:'',calendar:'now',pressure:'true',
     type:'map',location:'coordinates',detail:'true',metricWind:U,metricTemp:'°C',metricRain:'mm',radarRange:'-1'};
   return 'https://embed.windy.com/embed2.html?'+Object.entries(q).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&')}
 function wyLoad(){const {lat,lon}=wyPos();WY.loaded=true;

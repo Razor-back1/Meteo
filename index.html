@@ -1148,6 +1148,8 @@ $('footInfo').textContent='Actualisation automatique chaque minute. Tire l\'écr
 if(tab==='hist')setTab('hist');else if(S)render();
 load();
 if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+/* Ouverte dans le hub familial : lui donner la couleur du haut de l'app pour la barre d'état de l'iPhone. */
+(function(){if(window.parent===window)return;const send=()=>{const ms=[...document.querySelectorAll('meta[name="theme-color"]')];const m=ms.find(x=>!x.media||matchMedia(x.media).matches)||ms[0];if(m)parent.postMessage({hubThemeColor:m.getAttribute('content')},'*')};send();new MutationObserver(send).observe(document.head,{subtree:true,attributes:true,attributeFilter:['content','media']});matchMedia('(prefers-color-scheme: dark)').addEventListener('change',send)})();
 </script>
 </body>
 </html>

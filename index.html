@@ -222,6 +222,41 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
   .dial{width:108px;height:108px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Grand écran mural (écran tactile 27" de la cuisine, 1080 × 1920 en portrait) : tableau de bord.
+   Ne s'active que sur un très grand écran en hauteur : iPhone et iPad gardent la mise en page ci-dessus. */
+@media (min-width:1000px) and (min-height:1500px){
+  html{zoom:1.25}
+  .top-in,.wrap{max-width:none;padding-inline:22px}
+  .tabs-in{max-width:520px}
+  #vNow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-auto-flow:row dense;gap:0 18px;align-items:start;padding-bottom:110px}
+  #vNow>*{grid-column:1/-1}
+  #vNow>.hero{grid-column:1;padding-top:22px}
+  #vNow>.grid{grid-column:2;grid-row:span 2;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:22px}
+  #vNow>.alerts{grid-column:1;order:1}
+  #vNow>.hero,#vNow>.grid{order:0}
+  /* Ce qui sert le plus devant le frigo d'abord : prochaines heures, 7 jours et courbes, puis le reste. */
+  #vNow>.b-hours{order:2}
+  #vNow>.b-days{grid-column:1;order:3}
+  #vNow>.b-curves{order:3}
+  #vNow>.b-sum{order:4}
+  #vNow>.b-windy{order:5}
+  #vNow>.foot{order:6}
+  .b-sum .stats{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+  .big{font-size:112px}
+  .sky svg{width:84px;height:84px}
+  .sky .cond{font-size:17px}
+  .facts{font-size:15.5px;gap:6px 18px}
+  .hours{justify-content:space-between}
+  svg.chart{height:320px}
+  .day{grid-template-columns:92px 30px 34px minmax(0,1fr) 34px 70px}
+  .windy{height:640px}
+  #vHist{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 18px;align-items:start;padding-bottom:110px}
+  #vHist>*{grid-column:1/-1}
+  #vHist .stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .panel{max-width:620px;border-radius:20px;margin-bottom:auto;margin-top:auto}
+  .sheet{align-items:center}
+}
 </style>
 </head>
 <body>
@@ -303,7 +338,8 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
     </article>
   </section>
 
-  <h2>Courbes <span id="chartNote"></span></h2>
+<div class="blk b-curves">
+    <h2>Courbes <span id="chartNote"></span></h2>
   <section class="card">
     <div class="chips" id="liveChips" role="group" aria-label="Mesure">
       <button class="chip" data-m="temp">Température</button>
@@ -321,8 +357,10 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
     </div>
     <svg id="chart" class="chart" role="img" aria-label="Courbe"></svg>
   </section>
+  </div>
 
-  <h2>Carte Windy <a class="wlink" id="wyLink" href="https://www.windy.com/" target="_blank" rel="noopener">ouvrir dans Windy ↗</a></h2>
+<div class="blk b-windy">
+    <h2>Carte Windy <a class="wlink" id="wyLink" href="https://www.windy.com/" target="_blank" rel="noopener">ouvrir dans Windy ↗</a></h2>
   <section class="card">
     <div class="chips" id="wyChips" role="group" aria-label="Couche Windy">
       <button class="chip" data-o="wind">Vent</button>
@@ -337,20 +375,27 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
     </div>
     <div class="windy" id="windy"><div class="ph">La carte Windy se charge quand tu arrives ici.</div></div>
   </section>
+  </div>
 
-  <h2>Prochaines heures <span>prévision Open-Meteo</span></h2>
+<div class="blk b-hours">
+    <h2>Prochaines heures <span>prévision Open-Meteo</span></h2>
   <section class="card" style="padding-inline:14px"><div class="hours" id="hours"></div></section>
+  </div>
 
-  <h2>7 jours <span>prévision</span></h2>
+<div class="blk b-days">
+    <h2>7 jours <span>prévision</span></h2>
   <section class="card"><div class="days" id="days"></div></section>
+  </div>
 
-  <h2>Résumé de la station <span>mesuré à Leuze</span></h2>
+<div class="blk b-sum">
+    <h2>Résumé de la station <span>mesuré à Leuze</span></h2>
   <section class="card">
     <div class="sumbar"><div class="seg" id="sumSeg" role="group" aria-label="Période du résumé"><button data-p="7">7 jours</button><button data-p="30">30 jours</button></div><span class="cov" id="sumCov"></span></div>
     <div class="stats" id="stats"></div>
     <div class="tbl"><table id="log"></table></div>
     <button class="more" id="logMore" hidden>Afficher les 30 jours</button>
   </section>
+  </div>
 
   <div class="foot">
     <div>Mesures : station <a id="wuLink" href="https://www.wunderground.com/dashboard/pws/IGHEZE29" target="_blank" rel="noopener">IGHEZE29</a> via Weather Underground. Prévisions : <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>.</div>
@@ -761,7 +806,7 @@ function modelRows(metric,rows,x0,x1){
   return m}
 
 function drawChart(id,m){
-  const svg=$(id),rd=$(id+'Rd');const W=Math.max(280,svg.clientWidth||svg.parentNode.clientWidth-28),H=230,ml=38,mr=8,mt=16,mb=24;
+  const svg=$(id),rd=$(id+'Rd');const W=Math.max(280,svg.clientWidth||svg.parentNode.clientWidth-28),H=Math.max(200,Math.round(svg.clientHeight)||230),ml=38,mr=8,mt=16,mb=24;
   Object.assign(m,{W,H,ml,mr,mt,mb});svg.__m=m;svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
   const vals=[];m.lines.forEach(l=>l.pts.forEach(p=>vals.push(p[1])));if(m.fc)m.fc.forEach(p=>vals.push(p[1]));if(m.bars)m.bars.forEach(b=>vals.push(b.v));if(m.ranges)m.ranges.forEach(r=>vals.push(r.lo,r.hi));
   if(!vals.length){svg.innerHTML=`<text x="${W/2}" y="${H/2}" text-anchor="middle">Pas de mesures sur cette période</text>`;rd.innerHTML='';return}

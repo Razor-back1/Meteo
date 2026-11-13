@@ -1,0 +1,48 @@
+name: METAR et TAF Charleroi
+
+# Toutes les 10 minutes environ, lit le METAR et le TAF de Charleroi (EBCI) et les range dans la branche
+# « aero-data » (un seul commit, réécrit à chaque fois : pas d'historique qui grossit). L'app lit
+# https://raw.githubusercontent.com/Razor-back1/Meteo/aero-data/ebci.json
+# GitHub peut retarder les tâches planifiées de quelques minutes aux heures chargées.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/aero.mjs'
+      - '.github/workflows/aero.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: meteo-aero
+  cancel-in-progress: true
+
+jobs:
+  aero:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Lire le METAR et le TAF
+        run: AERO_OUT="$RUNNER_TEMP/ebci.json" node .github/scripts/aero.mjs
+
+      - name: Publier sur la branche aero-data
+        run: |
+          mkdir "$RUNNER_TEMP/pub" && cd "$RUNNER_TEMP/pub"
+          cp "$RUNNER_TEMP/ebci.json" .
+          git init -q -b aero-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ebci.json
+          git commit -q -m "METAR et TAF EBCI $(date -u +%FT%TZ)"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git push -q --force origin aero-data

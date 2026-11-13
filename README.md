@@ -1,7 +1,7 @@
 # Météo Leuze
 
 App de la station météo personnelle **IGHEZE29** (Weather Underground) : conditions en direct,
-prévisions, METAR, courbes sur 30 jours et historique (jour, mois, année, période).
+prévisions, METAR et TAF de Charleroi (EBCI, source NOAA aviationweather.gov), courbes sur 30 jours et historique (jour, mois, année, période).
 
 **Utiliser l'app** : https://razor-back1.github.io/Meteo/ — sur iPhone, ouvrir dans Safari →
 Partager → « Sur l'écran d'accueil ».

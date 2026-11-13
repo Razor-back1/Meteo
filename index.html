@@ -74,6 +74,7 @@ svg.i{width:1em;height:1em;display:inline-block;vertical-align:-.15em;flex:none}
 .up{color:var(--warm)}.down{color:var(--cold)}
 .metar{grid-column:1/-1;margin-top:12px;display:grid;gap:5px;min-width:0}
 .metar code{display:block;font:500 13px/1.45 var(--f-mono);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:7px 10px;white-space:normal;overflow-wrap:anywhere;cursor:copy;letter-spacing:.01em}
+.metar code.taf{white-space:pre-wrap}
 .alerts{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 2px}
 .alert{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:500;color:var(--warn);background:var(--warn-bg);border-radius:10px;padding:7px 11px}
 .err{margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--warn-bg);color:var(--warn);font-size:14px}
@@ -296,7 +297,8 @@ tr[data-k]:active td,tr[data-m]:active td{background:var(--sunk)}
     <div class="big" id="tNow">–<sup>°C</sup></div>
     <div class="sky"><svg id="skyIco"><use href="#i-cloud"/></svg><span class="cond" id="skyTxt">—</span></div>
     <div class="facts" id="facts"></div>
-    <div class="metar"><span class="lbl">METAR de la station · toucher pour copier</span><code id="metar">—</code></div>
+    <div class="metar"><span class="lbl" id="metarLbl">METAR Charleroi (EBCI) · toucher pour copier</span><code id="metar">—</code></div>
+    <div class="metar"><span class="lbl" id="tafLbl">TAF Charleroi (EBCI) · toucher pour copier</span><code id="taf">—</code></div>
   </section>
   <div class="alerts" id="alerts" hidden></div>
 
@@ -525,6 +527,7 @@ async function omGet(lat,lon){
 
 async function load(){
   if(ui.busy)return;ui.busy=true;$('btnRefresh').classList.add('spin');
+  if(Date.now()-AERO.at>5*60000)loadAero();
   const id=encodeURIComponent(cfg.id);
   const [c,d,h,s]=await Promise.allSettled([
     wuGet(`/v2/pws/observations/current?stationId=${id}`),
@@ -593,19 +596,34 @@ function renderNow(){
     trend=Math.abs(dt)<0.3?'<span>stable sur 1 h</span>':`<span class="${dt>0?'up':'down'}">${dt>0?'↗':'↘'} ${dt>0?'+':''}${fmt(dt,1)} °C en 1 h</span>`}
   const fl=feels(m);
   $('facts').innerHTML=`<span>Ressenti <b>${fmt(fl,1)} °C</b></span>${trend}<span>Min <b class="down">${fmt(st.lo.v,1)}</b> à ${hm(st.lo.t)}</span><span>Max <b class="up">${fmt(st.hi.v,1)}</b> à ${hm(st.hi.t)}</span>`;
-  $('metar').textContent=metar(ob);
+  renderAero();
   // alertes
   const al=alerts();const A=$('alerts');A.hidden=!al.length;A.innerHTML=al.map(a=>`<div class="alert"><svg class="i"><use href="#i-warn"/></svg>${a}</div>`).join('');
 }
-function metar(ob){
-  const m=ob.metric||{},p=P(Date.now()),u=new Date(T(ob));
-  const z=String(u.getUTCDate()).padStart(2,'0')+String(u.getUTCHours()).padStart(2,'0')+String(u.getUTCMinutes()).padStart(2,'0')+'Z';
-  const kt=v=>Math.round((v||0)/1.852);let sp=kt(m.windSpeed),gu=kt(m.windGust);
-  let w=sp<1?'00000KT':String(Math.round((ob.winddir||0)/10)*10||360).padStart(3,'0')+String(sp).padStart(2,'0')+(gu-sp>=10?'G'+String(gu).padStart(2,'0'):'')+'KT';
-  const tt=v=>v==null?'//':(v<0?'M':'')+String(Math.abs(Math.round(v))).padStart(2,'0');
-  let wx='';const r=m.precipRate||0;if(r>0)wx=(r<2.5?' -RA':r<7.6?' RA':' +RA');
-  const q=m.pressure!=null?' Q'+String(Math.round(m.pressure)).padStart(4,'0'):'';
-  return `${ob.stationID||cfg.id} ${z} ${w}${wx} ${tt(m.temp)}/${tt(m.dewpt)}${q}`;
+/* METAR et TAF officiels de l'aéroport de Charleroi (EBCI), source NOAA aviationweather.gov */
+const AERO={icao:'EBCI',at:0,busy:false,metar:null,taf:null,errM:false,errT:false};
+async function aeroGet(kind){
+  const r=await fetch(`https://aviationweather.gov/api/data/${kind}?ids=${AERO.icao}&format=json`,{cache:'no-store'});
+  if(!r.ok)throw new Error(kind+' '+r.status);
+  const j=await r.json();return Array.isArray(j)?j[0]||null:null}
+async function loadAero(){
+  if(AERO.busy)return;AERO.busy=true;
+  const [m,t]=await Promise.allSettled([aeroGet('metar'),aeroGet('taf')]);
+  if(m.status==='fulfilled'){AERO.metar=m.value;AERO.errM=false}else AERO.errM=true;
+  if(t.status==='fulfilled'){AERO.taf=t.value;AERO.errT=false}else AERO.errT=true;
+  // les messages changent lentement : on revient dans 5 min, ou dans 1 min après un échec
+  AERO.at=Date.now()-((AERO.errM||AERO.errT)?4*60000:0);AERO.busy=false;renderAero()}
+function aeroTime(v){if(v==null)return null;const t=typeof v==='number'?v*1000:Date.parse(v);return isFinite(t)?t:null}
+function tafText(raw){return raw.replace(/(PROB\d{2})\s+(TEMPO|BECMG)/g,'$1\u0001$2').replace(/\s+(BECMG|TEMPO|PROB\d{2}|FM\d{6})\b/g,'\n  $1').replace(/\u0001/g,' ').trim()}
+function renderAero(){
+  const mEl=$('metar'),tEl=$('taf');if(!mEl)return;
+  const m=AERO.metar,t=AERO.taf;
+  if(m&&m.rawOb){mEl.textContent=m.rawOb;const at=aeroTime(m.obsTime!=null?m.obsTime:m.reportTime);
+    $('metarLbl').textContent='METAR Charleroi (EBCI)'+(at?' · '+ago(at):'')+' · toucher pour copier'}
+  else{mEl.textContent=AERO.errM?'Indisponible (réessai automatique)':'—';$('metarLbl').textContent='METAR Charleroi (EBCI)'}
+  if(t&&t.rawTAF){tEl.textContent=tafText(t.rawTAF);tEl.classList.add('taf');const at=aeroTime(t.issueTime!=null?t.issueTime:t.bulletinTime);
+    $('tafLbl').textContent='TAF Charleroi (EBCI)'+(at?' · émis '+ago(at):'')+' · toucher pour copier'}
+  else{tEl.textContent=AERO.errT?'Indisponible (réessai automatique)':'—';tEl.classList.remove('taf');$('tafLbl').textContent='TAF Charleroi (EBCI)'}
 }
 function alerts(){
   const out=[],f=S.fc&&S.fc.hourly;if(!f)return out;const now=Date.now()/1000;
@@ -1122,7 +1140,7 @@ $('nfGo').addEventListener('click',async()=>{
 $('nfTest').addEventListener('click',async()=>{try{await nfApi('/push/test',{endpoint:NTF.endpoint,kind:NTF.prefs.soon===false?'now':'soon'});toast('Essai envoyé')}catch(e){nfRender(e.message,true)}});
 
 function toast(t){const e=$('toast');e.textContent=t;e.hidden=false;clearTimeout(toast.k);toast.k=setTimeout(()=>e.hidden=true,1800)}
-$('metar').addEventListener('click',async()=>{const t=$('metar').textContent;try{await navigator.clipboard.writeText(t);toast('METAR copié')}catch(e){const r=document.createRange();r.selectNodeContents($('metar'));const s=getSelection();s.removeAllRanges();s.addRange(r)}});
+['metar','taf'].forEach(id=>$(id).addEventListener('click',async()=>{const e=$(id),t=e.textContent;try{await navigator.clipboard.writeText(t);toast(id==='taf'?'TAF copié':'METAR copié')}catch(_){const r=document.createRange();r.selectNodeContents(e);const g=getSelection();g.removeAllRanges();g.addRange(r)}}));
 const sheet=$('sheet');
 $('btnSet').addEventListener('click',()=>{$('fId').value=cfg.id;$('fKey').value=cfg.key;$('fWind').value=cfg.wind;sheet.hidden=false;nfRender()});
 $('setCancel').addEventListener('click',()=>sheet.hidden=true);

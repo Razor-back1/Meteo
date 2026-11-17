@@ -606,7 +606,7 @@ const AERO={icao:'EBCI',at:0,busy:false,metar:null,taf:null,errM:false,errT:fals
    1. le relais Cloudflare du potager (route /aero, en direct) : AERO_RELAY, ou son adresse déjà connue de cet appareil ;
    2. un relais public de lecture (en direct aussi) ;
    3. le fichier recopié par la tâche GitHub (branche aero-data) : peut avoir plusieurs heures de retard, l'âge affiché le montre. */
-const AERO_RELAY='';
+const AERO_RELAY='https://potager.julien-van-der-rest.workers.dev';
 async function aeroJson(url){const r=await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(12000)});if(!r.ok)throw new Error('aero '+r.status);return r.json()}
 async function aeroGet(){
   const r0=(typeof nfRelay==='function'&&nfRelay())||null,base=(AERO_RELAY||(r0&&r0.url)||'').replace(/\/+$/,'');

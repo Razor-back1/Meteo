@@ -527,7 +527,7 @@ async function omGet(lat,lon){
 
 async function load(){
   if(ui.busy)return;ui.busy=true;$('btnRefresh').classList.add('spin');
-  if(Date.now()-AERO.at>5*60000)loadAero();
+  if(aeroDue())loadAero();
   const id=encodeURIComponent(cfg.id);
   const [c,d,h,s]=await Promise.allSettled([
     wuGet(`/v2/pws/observations/current?stationId=${id}`),
@@ -602,17 +602,31 @@ function renderNow(){
 }
 /* METAR et TAF officiels de l'aéroport de Charleroi (EBCI), source NOAA aviationweather.gov */
 const AERO={icao:'EBCI',at:0,busy:false,metar:null,taf:null,errM:false,errT:false};
-/* aviationweather.gov n'autorise pas les navigateurs (pas de CORS) : une tâche GitHub Actions (.github/workflows/aero.yml)
-   recopie le METAR et le TAF dans la branche aero-data, lue ici (raw.githubusercontent.com autorise tous les sites). */
+/* aviationweather.gov n'autorise pas les navigateurs (pas de CORS). Sources, dans l'ordre :
+   1. le relais Cloudflare du potager (route /aero, en direct) : AERO_RELAY, ou son adresse déjà connue de cet appareil ;
+   2. un relais public de lecture (en direct aussi) ;
+   3. le fichier recopié par la tâche GitHub (branche aero-data) : peut avoir plusieurs heures de retard, l'âge affiché le montre. */
+const AERO_RELAY='';
+async function aeroJson(url){const r=await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(12000)});if(!r.ok)throw new Error('aero '+r.status);return r.json()}
 async function aeroGet(){
-  const r=await fetch(`https://raw.githubusercontent.com/Razor-back1/Meteo/aero-data/ebci.json?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store'});
-  if(!r.ok)throw new Error('aero '+r.status);
-  return r.json()}
+  const r0=(typeof nfRelay==='function'&&nfRelay())||null,base=(AERO_RELAY||(r0&&r0.url)||'').replace(/\/+$/,'');
+  const tries=[];
+  if(base)tries.push(()=>aeroJson(`${base}/aero?icao=${AERO.icao}`));
+  tries.push(async()=>{
+    const awc=k=>`https://aviationweather.gov/api/data/${k}?ids=${AERO.icao}&format=json`,px=u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u);
+    const [m,t]=await Promise.all([aeroJson(px(awc('metar'))),aeroJson(px(awc('taf')))]);
+    return{metar:Array.isArray(m)?m[0]||null:null,taf:Array.isArray(t)?t[0]||null:null}});
+  tries.push(()=>aeroJson(`https://raw.githubusercontent.com/Razor-back1/Meteo/aero-data/ebci.json?t=${Math.floor(Date.now()/60000)}`));
+  let err;
+  for(const f of tries){try{const j=await f();if(j&&(j.metar||j.taf))return j}catch(e){err=e}}
+  throw err||new Error('aero')}
 async function loadAero(){
   if(AERO.busy)return;AERO.busy=true;
-  try{const j=await aeroGet();AERO.metar=j.metar;AERO.taf=j.taf;AERO.errM=AERO.errT=false}catch(e){AERO.errM=AERO.errT=true}
-  // le fichier est mis à jour toutes les 10 min environ : on revient dans 5 min, ou dans 1 min après un échec
+  try{const j=await aeroGet();AERO.metar=j.metar&&(j.metar.rawOb?j.metar:null);AERO.taf=j.taf&&(j.taf.rawTAF?j.taf:null);AERO.errM=AERO.errT=false}catch(e){AERO.errM=AERO.errT=true}
+  // on revient dans 5 min, ou dans 1 min après un échec (et aux heures où EBCI publie : voir aeroDue)
   AERO.at=Date.now()-((AERO.errM||AERO.errT)?4*60000:0);AERO.busy=false;renderAero()}
+/* EBCI publie son METAR à :20 et :50 : on regarde aussi à :22, :27, :52 et :57, puis toutes les 5 min */
+function aeroDue(){const age=Date.now()-AERO.at,m=new Date().getMinutes()%30;return age>5*60000||((m===22||m===27)&&age>90000)}
 function aeroTime(v){if(v==null)return null;const t=typeof v==='number'?v*1000:Date.parse(v);return isFinite(t)?t:null}
 function tafText(raw){return raw.replace(/(PROB\d{2})\s+(TEMPO|BECMG)/g,'$1\u0001$2').replace(/\s+(BECMG|TEMPO|PROB\d{2}|FM\d{6})\b/g,'\n  $1').replace(/\u0001/g,' ').trim()}
 function renderAero(){

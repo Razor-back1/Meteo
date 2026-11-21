@@ -525,6 +525,8 @@ async function omGet(lat,lon){
    +`&timezone=Europe%2FBrussels&timeformat=unixtime&forecast_days=8`;
   const r=await fetch(u);if(!r.ok)throw new Error('Open-Meteo '+r.status);return r.json()}
 
+let CORR={};
+const fixObs=o=>{const k=o&&o.obsTimeLocal&&o.obsTimeLocal.slice(0,10);if(k&&CORR[k]&&CORR[k].rain!=null&&o.metric){o.metric.precipTotal=CORR[k].rain;o.metric.precipRate=CORR[k].rain}return o}; // corrections manuelles : data/corrections.json
 async function load(){
   if(ui.busy)return;ui.busy=true;$('btnRefresh').classList.add('spin');
   if(aeroDue())loadAero();
@@ -534,8 +536,9 @@ async function load(){
     wuGet(`/v2/pws/observations/all/1day?stationId=${id}`),
     wuGet(`/v2/pws/observations/hourly/7day?stationId=${id}`),
     wuGet(`/v2/pws/dailysummary/7day?stationId=${id}`)]);
+  try{const r=await fetch('data/corrections.json',{cache:'no-cache'});if(r.ok)CORR=await r.json()}catch(e){}
   const ob=c.status==='fulfilled'&&c.value&&c.value.observations&&c.value.observations[0];
-  if(ob){
+  if(ob){fixObs(ob);for(const x of [d,h])if(x.status==='fulfilled'&&x.value&&x.value.observations)x.value.observations.forEach(fixObs);if(s.status==='fulfilled'&&s.value&&s.value.summaries)s.value.summaries.forEach(fixObs);
     const N=Object.assign({},S&&S.id===cfg.id?S:{},{id:cfg.id,cur:ob,at:Date.now()});
     if(d.status==='fulfilled')N.day=(d.value&&d.value.observations)||[];
     if(h.status==='fulfilled')N.hourly=(h.value&&h.value.observations)||[];
@@ -716,7 +719,7 @@ let HIST=LS.get(HK(),{}),histBusy=false,histProg=null;
 const kT=k=>Date.UTC(Math.floor(k/10000),Math.floor(k/100)%100-1,k%100,10); // vers midi à Bruxelles
 const kOf=s=>s.obsTimeLocal?+s.obsTimeLocal.slice(0,10).replace(/-/g,''):dayKey(T(s));
 const final=r=>r&&r.at>kT(r.k)+14*3600000; // lu après 2 h du matin le lendemain : journée complète
-function rowOf(s){const x=s.metric||{};return{k:kOf(s),lo:x.tempLow,hi:x.tempHigh,avg:x.tempAvg,rain:x.precipTotal,gust:x.windgustHigh,wavg:x.windspeedAvg,pmin:x.pressureMin,pmax:x.pressureMax,hum:s.humidityAvg,sol:s.solarRadiationHigh,uv:s.uvHigh,at:Date.now()}}
+function rowOf(s){fixObs(s);const x=s.metric||{};return{k:kOf(s),lo:x.tempLow,hi:x.tempHigh,avg:x.tempAvg,rain:x.precipTotal,gust:x.windgustHigh,wavg:x.windspeedAvg,pmin:x.pressureMin,pmax:x.pressureMax,hum:s.humidityAvg,sol:s.solarRadiationHigh,uv:s.uvHigh,at:Date.now()}}
 function mergeDaily(){const today=dayKey(Date.now());let ch=false;
   for(const s of (S.daily||[])){const r=rowOf(s);if(r.k<today&&(!HIST[r.k]||HIST[r.k].none||!final(HIST[r.k]))){HIST[r.k]=r;ch=true}}
   const old=dayKey(Date.now()-40*86400000);for(const k in HIST)if(+k<old){delete HIST[k];ch=true}

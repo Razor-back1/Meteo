@@ -25,6 +25,12 @@ const ymdTZ = d => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numer
 const hmTZ = e => new Intl.DateTimeFormat('fr-BE', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(e * 1000));
 const shift = (ymd, n) => { const [y, m, d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
 const dayFile = d => path.join(ROOT, 'days', d.slice(0, 4), d + '.json');
+// corrections manuelles (data/corrections.json) : { "AAAA-MM-JJ": { "rain": 0 } } remet à 0 la pluie d'un jour faussé
+function applyCorr(corr, d, rows) {
+  if (!corr[d] || corr[d].rain == null) return rows;
+  const ci = Object.fromEntries(COLS.map((k, i) => [k, i]));
+  return rows.map(r => { const x = r.slice(); x[ci.pr] = corr[d].rain; x[ci.pt] = corr[d].rain; return x; });
+}
 async function readJSON(f, def) { try { return JSON.parse(await readFile(f, 'utf8')); } catch { return def; } }
 async function writeJSON(f, v) { await mkdir(path.dirname(f), { recursive: true }); await writeFile(f, JSON.stringify(v)); }
 
@@ -76,6 +82,7 @@ async function main() {
   const idxFile = path.join(ROOT, 'index.json');
   const idx = await readJSON(idxFile, { station: STATION, empty: {} });
   idx.empty = idx.empty || {};
+  const corr = await readJSON(path.join(ROOT, 'corrections.json'), {});
   const today = ymdTZ(new Date()), yesterday = shift(today, -1), dayBefore = shift(today, -2);
 
   // journées à lire, des plus récentes aux plus anciennes
@@ -103,7 +110,7 @@ async function main() {
       const obs = await fetchDay(d);
       if (!obs || !obs.length) { idx.empty[d] = new Date().toISOString(); console.log(d, 'aucune donnée'); fails = 0; continue; }
       obs.sort((a, b) => a.epoch - b.epoch);
-      await writeJSON(dayFile(d), { station: STATION, d, fetched: new Date().toISOString(), cols: COLS, rows: obs.map(compact) });
+      await writeJSON(dayFile(d), { station: STATION, d, fetched: new Date().toISOString(), cols: COLS, rows: applyCorr(corr, d, obs.map(compact)) });
       delete idx.empty[d]; got++; fails = 0;
       console.log(d, obs.length, 'mesures');
     } catch (e) {
@@ -119,7 +126,7 @@ async function main() {
   for (const y of years) {
     const files = (await readdir(path.join(daysDir, y))).filter(f => f.endsWith('.json')).sort();
     const days = [];
-    for (const f of files) { const j = await readJSON(path.join(daysDir, y, f), null); if (j && j.rows && j.rows.length) days.push(summarize(j.d, j.rows)); }
+    for (const f of files) { const j = await readJSON(path.join(daysDir, y, f), null); if (j && j.rows && j.rows.length) days.push(summarize(j.d, applyCorr(corr, j.d, j.rows))); }
     if (!days.length) continue;
     await writeJSON(path.join(ROOT, y + '.json'), { station: STATION, year: +y, days });
     first = first || days[0].d; last = days[days.length - 1].d; count += days.length;
